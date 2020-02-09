@@ -12,7 +12,7 @@ custom:
 
 provider:
   name: aws
-  stage: ${env:SCM_ENV}
+  stage: ${opt:stage, 'dev'}
   region: ${env:AWS_DEFAULT_REGION}
   runtime: nodejs12.x
   memorySize: 128
@@ -21,6 +21,13 @@ provider:
   logRetentionInDays: 90
   environment:
     GIT_REVISION: ${env:GIT_REVISION}
+    SCM_SLACK_CLIENT_ID: ${env:SCM_SLACK_CLIENT_ID}
+    SCM_SLACK_CLIENT_SECRET: ${env:SCM_SLACK_CLIENT_SECRET}
+    SCM_DYNAMODB_TABLE_NAME: ${env:SCM_DYNAMODB_TABLE_NAME}
+
+  apiGateway:
+    restApiId: ${env:SCM_API_GATEWAY_REST_API_ID}
+    restApiRootResourceId: ${env:SCM_API_GATEWAY_ROOT_RESOURCE_ID}
 
 functions:
   index:

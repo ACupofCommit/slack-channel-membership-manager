@@ -7,7 +7,8 @@
     "clean": "rimraf .webpack && rimraf .serverless",
     "test": "echo \"(TODO) unit test is not yet!\"",
     "dev": "sls offline start --port 3005",
-    "deploy": "sls deploy --verbose"
+    "deploy": "sls deploy --stage $(terraform workspace show) --verbose",
+    "deploy:remove": "sls remove --stage $(terraform workspace show) --verbose"
   },
   "devDependencies": {
     "@babel/core": "^7.8.4",

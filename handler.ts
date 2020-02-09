@@ -1,6 +1,8 @@
 'use strict'
 
 import qs from 'querystring'
+import axios from 'axios'
+import AWS from 'aws-sdk'
 import { Context, APIGatewayEvent } from 'aws-lambda'
 import { intersection, difference, compact } from 'lodash'
 import to from 'await-to-js'
@@ -10,7 +12,9 @@ import { ConversationsMembersResponse, UsersListResponse } from 'seratch-slack-t
 import { WebClient, ViewsOpenArguments, ChatPostEphemeralArguments, SectionBlock } from '@slack/web-api'
 import { Member } from 'seratch-slack-types/web-api/UsersListResponse'
 
-const wc = new WebClient(process.env.SCM_SLACK_ACCESS_TOKEN)
+const TableName = process.env.SCM_DYNAMODB_TABLE_NAME || ''
+const httpOptions: AWS.HTTPOptions = { timeout: 2000 }
+const ddc = new AWS.DynamoDB.DocumentClient({ httpOptions })
 const COMMA_SEPARATED_EMAILS = 'COMMA_SEPARATED_EMAILS'
 const MODAL_MAIN = 'MODAL_MAIN'
 
@@ -107,6 +111,10 @@ interface IMyViewSubmissionPayload extends ViewSubmissionPayload {
 
 
 const handleViewSubmission = async (payload: IMyViewSubmissionPayload) => {
+  const Key = { teamId: payload.team.id }
+  const result = await ddc.get({ TableName, Key }).promise()
+  const wc = new WebClient(result.Item.accessToken)
+
   // TODO: yml 지원
   const value: string = payload.view.state?.values?.[COMMA_SEPARATED_EMAILS]?.emails?.value || ''
   const mmEmails = compact(value.split(',').map(email => email.trim()))
@@ -114,11 +122,11 @@ const handleViewSubmission = async (payload: IMyViewSubmissionPayload) => {
   const pm: IModalMainPM = JSON.parse(payload.view.private_metadata)
   const { channelId } = pm
 
-  const channelMemberIds = await getChannelMembers(channelId)
+  const channelMemberIds = await getChannelMembers(wc, channelId)
   console.log('channelMemberIdArr.length: ' + channelMemberIds.length)
   console.log('channelMemberIdArr: ' + channelMemberIds.join(','))
 
-  const allMemberArr = await getAllMembers()
+  const allMemberArr = await getAllMembers(wc)
   console.log('allMemberArr.length: ' + allMemberArr.length)
   console.log('allMemberArr[].id: ' + allMemberArr.map(o => o.id).join(','))
 
@@ -152,7 +160,7 @@ const handleViewSubmission = async (payload: IMyViewSubmissionPayload) => {
   return reportData
 }
 
-const getChannelMembers = async (channel: string): Promise<string[]> => {
+const getChannelMembers = async (wc: WebClient, channel: string): Promise<string[]> => {
   let cursor = void 0
   let arr: string[] = []
   let i = 0
@@ -174,7 +182,7 @@ const slackMemberToUser = (o: Member) => {
   }
 }
 
-const getAllMembers = async (): Promise<IUser[]> => {
+const getAllMembers = async (wc: WebClient): Promise<IUser[]> => {
   let cursor = void 0
   let users = []
   let i = 0
@@ -209,6 +217,7 @@ export const action = async (event: APIGatewayEvent, _: Context) => {
     console.error('Wrong payload')
     return { statusCode: 500, body: 'Wrong payload' }
   }
+
   const [err,res] = await to(handleViewSubmission(payload))
   if (err) {
     console.error(JSON.stringify(err))
@@ -219,13 +228,16 @@ export const action = async (event: APIGatewayEvent, _: Context) => {
 }
 
 export const test = async (event: APIGatewayEvent, _: Context) => {
-  const arr = await getAllMembers()
-  return { statusCode: 200, body: JSON.stringify(arr) }
+  return { statusCode: 200, body: 'test' }
 }
 
 export const command = async (event: APIGatewayEvent, _: Context) => {
   const eventBody: SlashCommandPayload = qs.parse(event.body) || {}
-  console.log(eventBody)
+  // console.log(eventBody)
+
+  const Key = { teamId: eventBody.team_id }
+  const result = await ddc.get({ TableName, Key }).promise()
+  const wc = new WebClient(result.Item.accessToken)
 
   const [err,res] = await to(wc.views.open(modal(eventBody.trigger_id, eventBody.channel_id)))
   if (err) {
@@ -245,4 +257,71 @@ export const index = async (event: APIGatewayEvent, _: Context) => {
       input: event,
     }, null, 2),
   }
+}
+
+interface IOAuthAcessV2Result {
+  ok: boolean
+  app_id: string
+  authed_user: { id: string }
+  scope: string
+  token_type: string
+  access_token: string
+  bot_user_id: string
+  team: { id: string, name: string }
+  enterprise_id: string | null
+}
+
+const isOAuthAccessV2SuccessResult = (data: any): data is IOAuthAcessV2Result => {
+  if (!data || typeof data !== 'object') return false
+
+  const { ok, app_id, authed_user, scope, token_type, access_token, bot_user_id, team, enterprise_id } = data
+  if (!ok || typeof ok !== 'boolean') return false
+  if (!access_token || typeof access_token !== 'string') return false
+  if (!scope || typeof scope !== 'string') return false
+  if (enterprise_id !== null && (!enterprise_id || typeof enterprise_id !== 'string')) return false
+  return true
+}
+
+interface IQuery {
+  state: string
+  error?: string
+  code?: string
+}
+
+const isIQuery = (query: any): query is IQuery => {
+  if (!query || typeof query !== 'object') return false
+
+  const { state, error, code } = query
+  if (typeof state !== 'string') return false
+  if (error !== void 0 && typeof error !== 'string') return false
+  if (code !== void 0 && typeof code !== 'string') return false
+  return true
+}
+
+export const oauth = async (event: APIGatewayEvent, _: Context) => {
+
+  const query = event.queryStringParameters
+  if (!isIQuery(query)) return { statusCode: 500, body: 'Wrong query' }
+  if (query.error === 'access_denied') return { statusCode: 500, body: 'access denied' }
+
+  const { code } = query
+  const client_id = process.env.SCM_SLACK_CLIENT_ID
+  const client_secret = process.env.SCM_SLACK_CLIENT_SECRET
+  const url = 'https://slack.com/api/oauth.v2.access'
+
+  const data = qs.stringify({ client_id, client_secret, code })
+  const [err, result] = await to(axios.post<IOAuthAcessV2Result>(url, data))
+  if (err || !result) return { statusCode: 500, body: 'wrong res or err'}
+
+  const Item = {
+    teamId: result.data.team.id,
+    accessToken: result.data.access_token,
+    app_id: result.data.app_id,
+    authed_user: result.data.authed_user.id,
+    scope: result.data.scope,
+  }
+  await ddc.put({ TableName, Item }).promise()
+  console.log(result.data)
+
+  return { statusCode: 200, body: 'good' }
 }

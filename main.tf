@@ -1,9 +1,16 @@
 variable "SCM_MANAGER_EMAIL" {}
 variable "SCM_PROJECT_NAME" {}
+variable "SCM_ROOT_DOMAIN" {}
+variable "SCM_DOMAIN" {}
 
 provider "aws" {
   version = "~> 2.48"
   alias   = "region"
+}
+
+provider "aws" {
+  alias = "virginia"
+  region = "us-east-1"
 }
 
 terraform {
@@ -98,4 +105,63 @@ resource "aws_iam_role_policy" "labmda_excution_role_policy" {
 }
 EOF
 
+}
+
+data "aws_route53_zone" "main" {
+  name         = var.SCM_ROOT_DOMAIN
+  private_zone = false
+}
+
+resource "aws_api_gateway_rest_api" "main" {
+  name        = "${var.SCM_PROJECT_NAME}-${local.env}"
+  endpoint_configuration {
+    types = ["REGIONAL"]
+  }
+  /*
+  tags = {
+    Manager = var.SCM_MANAGER_EMAIL
+  }
+  */
+}
+
+resource "aws_api_gateway_domain_name" "main" {
+  certificate_arn = aws_acm_certificate.cert.arn
+  domain_name     = var.SCM_DOMAIN
+}
+
+resource "aws_api_gateway_base_path_mapping" "main" {
+  api_id      = aws_api_gateway_rest_api.main.id
+  stage_name  = local.env
+  domain_name = aws_api_gateway_domain_name.main.domain_name
+}
+
+resource "aws_route53_record" "main" {
+  zone_id = data.aws_route53_zone.main.zone_id
+  name    = var.SCM_DOMAIN
+  type    = "A"
+  alias {
+    evaluate_target_health = true
+    name    = aws_api_gateway_domain_name.main.cloudfront_domain_name
+    zone_id = aws_api_gateway_domain_name.main.cloudfront_zone_id
+  }
+}
+
+resource "aws_acm_certificate" "cert" {
+  domain_name       = var.SCM_DOMAIN
+  validation_method = "DNS"
+  provider          = aws.virginia
+}
+
+resource "aws_route53_record" "cert_validation" {
+  name    = aws_acm_certificate.cert.domain_validation_options.0.resource_record_name
+  type    = aws_acm_certificate.cert.domain_validation_options.0.resource_record_type
+  zone_id = data.aws_route53_zone.main.id
+  records = [aws_acm_certificate.cert.domain_validation_options.0.resource_record_value]
+  ttl     = 60
+}
+
+resource "aws_acm_certificate_validation" "cert" {
+  certificate_arn         = aws_acm_certificate.cert.arn
+  validation_record_fqdns = [aws_route53_record.cert_validation.fqdn]
+  provider                = aws.virginia
 }
