@@ -1,0 +1,61 @@
+service:
+  name: ${env:TF_VAR_SCM_PROJECT_NAME}
+
+plugins:
+  - serverless-webpack
+  - serverless-plugin-info-json
+  - serverless-offline
+
+custom:
+  webpack:
+    packager: yarn
+
+provider:
+  name: aws
+  stage: ${env:SCM_ENV}
+  region: ${env:AWS_DEFAULT_REGION}
+  runtime: nodejs12.x
+  memorySize: 128
+  timeout: 4
+  role: ${env:SCM_LAMBDA_EXCUTION_ROLE_ARN}
+  logRetentionInDays: 90
+  environment:
+    GIT_REVISION: ${env:GIT_REVISION}
+
+functions:
+  index:
+    handler: handler.index
+    events:
+      - http:
+          method: get
+          path: /
+      - http:
+          method: get
+          path: /{pathname+}
+  command:
+    handler: handler.command
+    events:
+      - http:
+          method: post
+          path: /slack/command
+  test:
+    handler: handler.test
+    events:
+      - http:
+          method: get
+          path: /test
+  action:
+    handler: handler.action
+    events:
+      - http:
+          method: post
+          path: /slack/action
+  oauth:
+    handler: handler.oauth
+    events:
+      - http:
+          method: get
+          path: /slack/oauth
+      - http:
+          method: post
+          path: /slack/oauth
