@@ -1,8 +1,0 @@
-/node_modules/
-/.serverless/
-/.terraform/
-/.webpack/
-/.envrc
-
-*.tfstate
-*.tfstate.backup
