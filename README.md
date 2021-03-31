@@ -1,4 +1,7 @@
 # Slack channel membership menager
+
+![logo](./docs/logo-512x512.png)
+
 Membership management application for Slack channels.
 based on [@slack/bolt](https://github.com/slackapi/bolt-js).
 
