@@ -1,0 +1,5 @@
+{
+  "exec": "ts-node bin/start-socket-mode.ts",
+  "watch": ["./**/*.ts"],
+  "ext": "ts"
+}
