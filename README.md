@@ -15,9 +15,6 @@ $ yarn
 
 ```
 export ENV_SLS_STAGE=local
-export ENV_REVISION='your-git-revision'
-
-export ENV_SLS_STAGE=local
 export ENV_REVISION='local-server'
 export SCMM_TABLENAME_PREFIX=SCMM-Local
 export SCMM_SIGNING_SECRET=<slack app's signing secret>
