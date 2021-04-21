@@ -22,7 +22,7 @@ export const expressReceiver = new ExpressReceiver({
   clientId: SCMM_CLIENT_ID,
   clientSecret: SCMM_CLIENT_SECRET,
   stateSecret: SCMM_STATE_SECRET,
-  scopes: ['app_mentions:read','chat:write','chat:write.customize','im:write','commands'],
+  scopes: ['app_mentions:read','chat:write','commands','groups:read','users:read','users:read.email'],
   installationStore: {
     storeInstallation: async (installation) => {
       console.log('New installation!')
